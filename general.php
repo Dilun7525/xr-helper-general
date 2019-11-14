@@ -47,10 +47,21 @@ function go_url_sanitize($go_url = NULL){
 	return $go_filtered;
 }
 
+/**
+ * Возвращает ключ УРЛ (по сути заменяет в пути слеши на нижнее подчеркивание).
+ * Удобно для составления уникальных ключей для Memcached или названий форм в сессиях.
+ * @param  string|null $go_url URL path. Default is current URL path.
+ * @return string              Key string based on URL path
+ */
+function key_by_url($go_url = NULL){
+	return implode('_', !is_null($go_url) ? explode('/', go_url_sanitize($go_url)) : $GLOBALS['arr_url_go']);
+}
+
 
 // **********
 // *  TEXT  *
 // **********
+
 
 /**
  * Экранирование текста (shortcut for htmlspecialchars($str, ENT_QUOTES))
@@ -107,6 +118,293 @@ function print_arr($arr, $format = 0){
  */
 function explode_by_lines($str = ''){
 	return !empty($str) ? explode("\n", str_replace(array("\r\n", "\r"), "\n", $str)) : array();
+}
+
+/**
+ * Укорачивание текста
+ * @param  string  $str        String to be shorten
+ * @param  integer $max_length Max length of the string (chars)
+ * @param  array   $sys        Settings array with options:
+ *                             <ul>
+ *                             		<li> <strong> stop_char </strong> string
+ *                             		- Set the cutting point closest to this char. Default: " " (space)
+ *                             		<li> <strong> more_char </strong> string
+ *                             		- Char placed after truncated string. Default: "…"
+ *                             </ul>
+ * @return string              Shorted string
+ */
+function str_shorten($str, $max_length = 200, $sys = array()){
+	
+	if(!isset($sys['stop_char'])){
+		$sys['stop_char'] = ' ';
+	}
+	if(!isset($sys['more_char'])){
+		$sys['more_char'] = '…';
+	}
+	
+	$return = $str;
+	
+	$str_l = mb_strlen($str);
+	$nchar_l = $sys['more_char'] == '…' ? 1 : mb_strlen($sys['more_char']);
+	
+	if($str_l > $max_length){
+		
+		$pos = $sys['stop_char'] !== '' ? mb_strpos($str, $sys['stop_char'], $max_length) : false;
+		
+		if($pos !== false && $pos + $nchar_l <= $max_length){
+			$return = mb_substr($str, 0, $pos) . $sys['more_char'];
+		} else {
+			$return = mb_substr($str, 0, $max_length - $nchar_l) . $sys['more_char'];
+		}
+	}
+	
+	return $return;
+}
+
+/**
+ * Multibyte version of substr_replace()
+ * @param  mixed  $string      The input string
+ * @param  mixed  $replacement The replacement string
+ * @param  mixed  $start       If start is non-negative, the replacing will begin at the start'th offset into string.
+ *                             If start is negative, the replacing will begin at the start'th character from the end of string.
+ * @param  mixed  $length      If given and is positive, it represents the length of the portion of string which is to be replaced.
+ *                             If it is negative, it represents the number of characters from the end of string at which to stop replacing.
+ *                             If it is not given, then it will default to strlen( string ); i.e. end the replacing at the end of string.
+ *                             Of course, if length is zero then this function will have the effect of inserting replacement into string at the given start offset.
+ * @return string              The result string is returned. If string is an array then array is returned.
+ */
+function mb_substr_replace($string, $replacement, $start, $length = NULL){
+	if ($length === NULL){
+		return mb_substr($string,0,$start).$replacement;
+	}
+	else{
+		return mb_substr($string,0,$start).$replacement.mb_substr($string,$start + $length);
+	}
+}
+
+/**
+ * Replace the first occurrence of the given needle in subject string
+ * @param  mixed  $search  Searched needle
+ * @param  mixed  $replace The replacement string
+ * @param  string $subject Subject string (haystack)
+ * @return string          The result string
+ */
+function str_replace_first($search, $replace, $subject){
+	$pos = mb_strpos($subject, $search);
+	if ($pos !== false) {
+		return mb_substr_replace($subject, $replace, $pos, mb_strlen($search));
+	}
+	else {
+		return $subject;
+	}
+}
+
+/**
+ * Обработка текста в зависимости от заданного формата
+ * @param  string  $str  Text
+ * @param  integer $type Text format type (default: 0). Options:
+ *                       <ul>
+ *                       	<li> <strong> 0 </strong>
+ *                       		- Text without HTML (special chars are escaped, new lines are converted to &lt;br&gt;)
+ *                       	<li> <strong> 1 </strong>
+ *                       		- Text with HTML tags (new lines are converted to &lt;br&gt;)
+ *                       	<li> <strong> 2 </strong>
+ *                       		- HTML code (leave as is)
+ *                       </ul>
+ * @param  array   $sys  Settings array with options:
+ *                       <ul>
+ *                       	<li> <strong> shorten </strong> integer
+ *                       		- Use str_shorten() on string. Only if $type == 0. Default: NULL
+ *                       	<li> <strong> smile </strong> boolean
+ *                       		- Parse string with emoticons (place images). Default: FALSE
+ *                       	<li> <strong> wrap </strong> string
+ *                       		- Wrap the result with some tag (i.e."div"). Default: NULL
+ *                       </ul>
+ * @return string        Formatted text
+ */
+function get_strtype($str, $type = 0, $sys = array()){
+	// результат
+	$return = '';
+	
+	$xhtml_br = !isset($sys['xhtml_br']) || !empty($sys['xhtml_br']);
+	
+	// производим обработку строки
+	switch ($type){
+		// текст
+		case 0: {
+			if(!empty($sys['shorten'])){
+				$return = nl2br(ival(str_shorten($str, $sys['shorten'])), $xhtml_br);
+			} else {
+				$return = nl2br(ival($str), $xhtml_br);
+			}
+			break;
+		}
+		// текст с разметкой
+		case 1: {
+			$return = nl2br($str, $xhtml_br);
+			break;
+		}
+		// HTML
+		case 2: {
+			$return = $str;
+			break;
+		}
+	}
+	
+	// parse emoticons
+	if(!empty($sys['smile'])){
+		$return = parse_smile_emoticons($return);
+	}
+	
+	// wrap tag
+	if(!empty($sys['wrap'])){
+		$return = '<'.$sys['wrap'].'>'.$return.'</'.$sys['wrap'].'>';
+	}
+	
+	return $return;
+}
+
+/**
+ * Перевод числа в байты, килобайты, мегабайты, гигабайты
+ * @param  integer  $num     	Number
+ * @param  integer $decimals  	Sets the number of decimal points. Default: 0 (auto)
+ * @param  integer $precision 	Precision:
+ *                             	<ul>
+ *                             		<li> <strong> 0 </strong> - Automatic precision by the number length (default)
+ *                             		<li> <strong> 1 </strong> - Bytes
+ *                             		<li> <strong> 2 </strong> - Kilobytes
+ *                             		<li> <strong> 3 </strong> - Megabytes
+ *                             		<li> <strong> 4 </strong> - Gigabytes
+ *                             	</ul>
+ * @return string           	Converted number to bytes
+ */
+function name_to_bit($num, $decimals = 0, $precision = 0){
+	
+	// выясняем точность: 1 - байты, 2 - килобайты, 3 - мегабайты, 4 - Гигобайты
+	$precision = $precision ? $precision : ceil(strlen($num) / 3);
+	
+	switch ($precision){
+		case 1: $return = number_format($num, 0, '.', ' ') . " B";
+			break;
+		case 2: $num = $num / 1024;
+			$return = number_format($num, $decimals ? $decimals : 1, '.', ' ') . " KB";
+			break;
+		case 3: $num = $num / 1024 / 1024;
+			$return = number_format($num, $decimals ? $decimals : 2, '.', ' ') . " MB";
+			break;
+		case 4:
+		default: $num = $num / 1024 / 1024 / 1024;
+			$return = number_format($num, $decimals ? $decimals : 3, '.', ' ') . " GB";
+			break;
+	}
+	
+	return $return;
+}
+
+/**
+ * Транслитерация текста
+ * @param  string  $str      String for transliteration (see conversion array $GLOBALS['arr_translit'])
+ * @param  boolean $url_name Prepare string for using in URL. Default: false (url non-friendly chars are kept)
+ * @return string            Transliterated string
+ */
+function translit($str, $url_name = false){
+	// удаляем лишние строки
+	$str = trim($str);
+	// в нижний регистр
+	$str = mb_strtolower($str);
+	// транслитерация
+	$str = str_replace(array_keys($GLOBALS['arr_translit']), array_values($GLOBALS['arr_translit']), $str);
+	// если это для URL
+	if($url_name){
+		// оставляем только цифры, латинские буквы и знак "-" (заменяем все на "-")
+		$str = preg_replace('/[^a-z0-9-]/u', '-', $str);
+		// отрезаем лишние "-"
+		$str = trim($str, '-');
+		// переводим все "-" в одиночные
+		$str = preg_replace('/--+/u', '-', $str);
+	}
+	return $str;
+}
+
+/**
+ * Проверка равенства транслитирированных текстов (смешанные тексты, где есть и кириллица латиница)
+ * @param  string  $str_1         String 1
+ * @param  string  $str_2         String 2
+ * @param  boolean $search_partly Exact match or search partly. Default: false (exact match)
+ * @return boolean|integer        If $search_partly is true, then position is returned in case of $str_1 is found in $str_1.
+ *                                Otherwise boolean result status is returned (FALSE means not found / not equal)
+ */
+function str_equality_translit($str_1, $str_2, $search_partly = false){
+	// в нижний регистр
+	$str_1 = mb_strtolower($str_1);
+	$str_2 = mb_strtolower($str_2);
+	
+	// транслитирируем
+	$str_1 = translit($str_1);
+	$str_2 = translit($str_2);
+	
+	// если ищем влючение
+	if($search_partly){
+		$return = mb_strpos($str_1, $str_2);
+	}
+	// если сравниваем значения
+	elseif($str_1 == $str_2){
+		$return = true;
+	}
+	// тексты не равны
+	else {
+		$return = false;
+	}
+	
+	return $return;
+}
+
+/**
+ * Перевод первого знака в верхний реестр
+ * @param  string $str    String
+ * @param  array $params  Settings array with options:
+ *                        <ul>
+ *                        	<li> <strong> rest_to_lower </strong> boolean
+ *                        		- Convert rest of the string to lower case. Default: false (leave as is)
+ *                        </ul>
+ * @return string         String with upper cased first letter
+ */
+function str_ucfirst($str, $params=array()){
+	// check empty
+	if(empty($str)){
+		return '';
+	}
+	
+	if(mb_strlen($str) > 1){
+		
+		$part_1 = mb_strtoupper(mb_substr($str, 0, 1));
+		$part_2 = mb_substr($str, 1);
+		
+		if(!empty($params['rest_to_lower'])){
+			$part_2 = mb_strtolower($part_2);
+		}
+		
+		$return = $part_1 . $part_2;
+	} else{
+		$return = mb_strtoupper($str);
+	}
+	
+	return $return;
+}
+
+/**
+ * Генератор рандомного текста
+ * @param  integer $length     Length of the output random text
+ * @param  string  $characters Used characters in the output random text. Default: "abcdefghijklmnopqrstuvwxyz0123456789"
+ * @return string              Random text
+ */
+function get_random_string($length, $characters = 'abcdefghijklmnopqrstuvwxyz0123456789'){
+	$num_characters = strlen($characters) - 1;
+	$return = '';
+	while (strlen($return) < $length){
+		$return .= $characters[mt_rand(0, $num_characters)];
+	}
+	return $return;
 }
 
 
@@ -213,6 +511,91 @@ function arr_index($arr, $by_key){
 	}
 	
 	return $ret;
+}
+
+/**
+ * Генерация ключей для запросов к базе с оператором WHERE {col} IN (?,?,…).
+ * Могут генерироваться либо знаки вопроса (?), либо наименования.
+ * Пример:
+ * <pre>
+ * // default (question marks):
+ * $data = array('foo', 'bar');
+ * $result = mysql_do('INSERT INTO some_table (col_name) VALUES ('.arr_in($data).')', $data);
+ * // Query: INSERT INTO some_table (col_name) VALUES (?,?)
+ *
+ * // named indexes
+ * $data = array(':foo' => 'bar', ':not_foo' => 'not_bar');
+ * $result = mysql_do('INSERT INTO some_table (col_name) VALUES ('.arr_in($data).')', $data);
+ * // Query: INSERT INTO some_table (col_name) VALUES (:foo, :not_foo)
+ * </pre>
+ *
+ * @param  array   			$arr     	Data array
+ * @param  boolean|string 	$prefix  	If FALSE (default), then question marks (?) are generated if data array is numerically indexed [0=>…, 1=>…],
+ *                                   		otherwise array keys names are used.<br>
+ *                                  	IF STRING is passed, then it is used as prefix to every array key number (not key name itself, but it's numerical position)
+ * @param  boolean 			$force_q 	Force function to generate question marks (?) even if data array is not numerically indexed (see $prefix = FALSE)
+ * @return string           			Generated string
+ */
+function arr_in($arr = array(), $prefix = false, $force_q = false){
+	$return = '';
+	
+	if(is_array($arr) && !empty($arr)){
+		// если мы используем наименования и нужен префикс к ключам
+		if($prefix !== false){
+			for ($i = 0, $c = count($arr); $i < $c; $i++){
+				$return .= ($i ? ',' : '') . $prefix . $i;
+			}
+		}
+		// если мы используем пронумерованное поле
+		elseif(isset($arr[0]) || $force_q){
+			$return = implode(',', array_fill(1, count($arr), '?'));
+		}
+		// если мы используем наименования
+		else
+			$return = implode(',', array_keys($arr));
+	}
+	return $return;
+}
+
+/**
+ * Ищет в массиве заданный элемент и возвращает ключ или FALSE если ничего не найдено.
+ * Массив должен иметь следующий формат: $arr [ item => [ '$index' => '$element', … ], … ].
+ * Обычно это используется для поиска в массивах, которые возвращает ф-ция mysql_get_arr()
+ * @param  array  $arr     Array to search element in
+ * @param  mixed  $element Needle
+ * @param  string $index   Items array key name. Default: "id"
+ * @return mixed           Found item key name or FALSE if nothing is found
+ */
+function get_id_array($arr, $element, $index = 'id'){
+	
+	if(!$arr || !is_array($arr)){
+		return false;
+	}
+	
+	$return = false;
+	
+	foreach ($arr as $a => $a_val){
+		if(!isset($a_val[$index])){
+			return false;
+		}
+		if($a_val[$index] == $element){
+			$return = $a;
+			break;
+		}
+	}
+	
+	return $return;
+}
+
+/**
+ * Выводит JSON
+ * @param $array
+ * @return bool
+ */
+function echo_json($array)
+{
+	echo json_encode($array, JSON_UNESCAPED_UNICODE);
+	return true;
 }
 
 
@@ -415,5 +798,16 @@ function convert_to_mysql_date($date, $inputformat = 'd.m.Y'){
 	return $date->format('Y-m-d');
 }
 
+/**
+ * Проверка валидности даты
+ * @param $date
+ * @param string $format
+ * @return bool
+ */
+function is_valid_date($date, $format = 'Y-m-d H:i:s')
+{
+	$d = DateTime::createFromFormat($format, $date);
+	return $d && $d->format($format) == $date;
+}
 
 
