@@ -12,23 +12,14 @@
 // *********
 
 /**
- * Фильтр для пути скрипта ($_GET['go'] по умолчанию).
+ * Фильтр для пути скрипта.
  * Запрещены все знаки кроме цифр, латинских букв и знаков "_-". Слэши в самом конце отрезаются
  *
  * @param  string $go_url Raw URL path
  *
  * @return string         Filtered URL path
  */
-function go_url_sanitize($go_url = NULL){
-	
-	if($go_url === NULL){
-		
-		if(empty($_GET['go'])){
-			return '';
-		}
-		
-		$go_url = $_GET['go'];
-	}
+function go_url_sanitize($go_url){
 	
 	if(empty($go_url)){
 		return '';
@@ -45,16 +36,6 @@ function go_url_sanitize($go_url = NULL){
 	}
 	
 	return $go_filtered;
-}
-
-/**
- * Возвращает ключ УРЛ (по сути заменяет в пути слеши на нижнее подчеркивание).
- * Удобно для составления уникальных ключей для Memcached или названий форм в сессиях.
- * @param  string|null $go_url URL path. Default is current URL path.
- * @return string              Key string based on URL path
- */
-function key_by_url($go_url = NULL){
-	return implode('_', !is_null($go_url) ? explode('/', go_url_sanitize($go_url)) : $GLOBALS['arr_url_go']);
 }
 
 
@@ -303,17 +284,29 @@ function name_to_bit($num, $decimals = 0, $precision = 0){
 
 /**
  * Транслитерация текста
- * @param  string  $str      String for transliteration (see conversion array $GLOBALS['arr_translit'])
- * @param  boolean $url_name Prepare string for using in URL. Default: false (url non-friendly chars are kept)
- * @return string            Transliterated string
+ *
+ * @param  string  $str     	  String for transliteration (see conversion array $arr_translit)
+ * @param  boolean $url_name	  Prepare string for using in URL. Default: false (url non-friendly chars are kept)
+ * @param array    $arr_translit
+ *
+ * @return string            	  Transliterated string
  */
-function translit($str, $url_name = false){
+function translit($str,
+				  $url_name = false,
+				  array $arr_translit = ['а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e',
+										 'ё' => 'yo', 'ж' => 'j', 'з' => 'z', 'и' => 'i', 'й' => 'i', 'к' => 'k',
+										 'л' => 'l', 'м' => 'm', 'н' => 'n', 'о' => 'o', 'п' => 'p', 'р' => 'r',
+										 'с' => 's', 'т' => 't', 'у' => 'u', 'ф' => 'f', 'х' => 'x', 'ц' => 'c',
+										 'ч' => 'ch', 'ш' => 'sh', 'щ' => 'shch', 'э' => 'e', 'ы' => 'y', 'ю' => 'u',
+										 'я' => 'ya', 'ь' => '', 'ъ' => '']
+){
+	
 	// удаляем лишние строки
 	$str = trim($str);
 	// в нижний регистр
 	$str = mb_strtolower($str);
 	// транслитерация
-	$str = str_replace(array_keys($GLOBALS['arr_translit']), array_values($GLOBALS['arr_translit']), $str);
+	$str = str_replace(array_keys($arr_translit), array_values($arr_translit), $str);
 	// если это для URL
 	if($url_name){
 		// оставляем только цифры, латинские буквы и знак "-" (заменяем все на "-")
@@ -489,11 +482,13 @@ function array_groupby($arr = array(), $index = '', $selective = array(), $param
 /**
  * Индексирует массив по заданному ключу элемента в данном массиве.
  * Пример: <br>
- * 	$original_array = [ 0 => ['id'=>1, 'name'=>'test 1'], 1 => ['id'=>2, 'name'=>'test 2'] ] <br>
- * 	$result_array = arr_index( $original_array, 'id' ) <br>
- *  => [ <b>1</b> => ['id'=>1, 'name'=>'test 1'], <b>2</b> => ['id'=>2, 'name'=>'test 2'] ]
- * @param  array   $arr    Array to index
- * @param  string  $by_key Items array key name to index the $arr by
+ *    $original_array = [ 0 => ['id'=>1, 'name'=>'test 1'], 1 => ['id'=>2, 'name'=>'test 2'] ] <br>
+ *    $result_array = arr_index( $original_array, 'id' ) <br>
+ *    => [ <b>1</b> => ['id'=>1, 'name'=>'test 1'], <b>2</b> => ['id'=>2, 'name'=>'test 2'] ]
+ *
+ * @param  array  $arr    Array to index
+ * @param  string $by_key Items array key name to index the $arr by
+ *
  * @return array           Indexed array
  */
 function arr_index($arr, $by_key){
@@ -518,23 +513,26 @@ function arr_index($arr, $by_key){
  * Могут генерироваться либо знаки вопроса (?), либо наименования.
  * Пример:
  * <pre>
- * // default (question marks):
- * $data = array('foo', 'bar');
- * $result = mysql_do('INSERT INTO some_table (col_name) VALUES ('.arr_in($data).')', $data);
- * // Query: INSERT INTO some_table (col_name) VALUES (?,?)
+ * 		// default (question marks):
+ * 		$data = array('foo', 'bar');
+ * 		$result = mysql_do('INSERT INTO some_table (col_name) VALUES ('.arr_in($data).')', $data);
+ * 		// Query: INSERT INTO some_table (col_name) VALUES (?,?)
  *
- * // named indexes
- * $data = array(':foo' => 'bar', ':not_foo' => 'not_bar');
- * $result = mysql_do('INSERT INTO some_table (col_name) VALUES ('.arr_in($data).')', $data);
- * // Query: INSERT INTO some_table (col_name) VALUES (:foo, :not_foo)
+ * 		// named indexes
+ * 		$data = array(':foo' => 'bar', ':not_foo' => 'not_bar');
+ * 		$result = mysql_do('INSERT INTO some_table (col_name) VALUES ('.arr_in($data).')', $data);
+ * 		// Query: INSERT INTO some_table (col_name) VALUES (:foo, :not_foo)
  * </pre>
  *
- * @param  array   			$arr     	Data array
- * @param  boolean|string 	$prefix  	If FALSE (default), then question marks (?) are generated if data array is numerically indexed [0=>…, 1=>…],
- *                                   		otherwise array keys names are used.<br>
- *                                  	IF STRING is passed, then it is used as prefix to every array key number (not key name itself, but it's numerical position)
- * @param  boolean 			$force_q 	Force function to generate question marks (?) even if data array is not numerically indexed (see $prefix = FALSE)
- * @return string           			Generated string
+ * @param  array          $arr            Data array
+ * @param  boolean|string $prefix         If FALSE (default), then question marks (?) are generated if data array is
+ *                                        numerically indexed [0=>…, 1=>…], otherwise array keys names are used.<br> IF
+ *                                        STRING is passed, then it is used as prefix to every array key number (not
+ *                                        key name itself, but it's numerical position)
+ * @param  boolean        $force_q        Force function to generate question marks (?) even if data array is not
+ *                                        numerically indexed (see $prefix = FALSE)
+ *
+ * @return string                    Generated string
  */
 function arr_in($arr = array(), $prefix = false, $force_q = false){
 	$return = '';
@@ -635,13 +633,15 @@ function dir_create($new_path){
 
 /**
  * Удаление папки
- * @param  [type] $dir [description]
- * @return [type]      [description]
+ *
+ * @param  string $dir [description]
+ *
+ * @return bool   [description]
  */
 function dir_remove($dir){
 	
 	if(!is_dir($dir)){
-		return;
+		return false;
 	}
 	
 	foreach(scandir($dir) as $file) {
@@ -673,8 +673,10 @@ function sharding_path($id)
 
 /**
  * Запись контента в файл. Папка создается на лету, если ее нет.
+ *
  * @param  string $path File path. Folders will be created if not exist
  * @param  string $str  File content
+ *
  * @return boolean      Operation status
  */
 function strtofile($path, $str = ''){
@@ -692,8 +694,10 @@ function strtofile($path, $str = ''){
 
 /**
  * Копирование файла (создает путь, если его нет)
+ *
  * @param  string $path     File to copy
  * @param  string $new_path New file path (directories are created on fly if they don't exist)
+ *
  * @return boolean          Result status
  */
 function file_copy($path, $new_path){
@@ -705,12 +709,15 @@ function file_copy($path, $new_path){
 	if($dirname && !dir_create($dirname)){
 		return false;
 	}
+	
 	return copy($path, $new_path);
 }
 
 /**
  * Определение типа файла (расширение)
+ *
  * @param  string $name File path or name
+ *
  * @return string       File extension
  */
 function file_get_type($name){
@@ -731,50 +738,62 @@ function file_get_type($name){
 
 /**
  * Перевод дня года на дату в указанном формате
- * @param  integer $dayOfYear Day of the current year
- * @param  string  $format    Desired format. Default: "d.m"
- * @return string             Translated day of the year to date string
+ *
+ * @param integer $dayOfYear Day of the current year
+ * @param int     $time_now
+ * @param string  $format    Desired format. Default: "d.m"
+ *
+ * @return string            Translated day of the year to date string
  */
-function getDateFromDay($dayOfYear, $format = 'd.m'){
-	$date = DateTime::createFromFormat('z Y', $dayOfYear . ' ' . date("Y", $GLOBALS['now_time']));
+function getDateFromDay($dayOfYear, int $time_now = 0, $format = 'd.m'){
+	$time_now = $time_now ?: time();
+
+	$date = DateTime::createFromFormat('z Y', $dayOfYear . ' ' . date("Y", $time_now));
+
 	return $date->format($format);
 }
 
 /**
  * Конвертация периодичной даты из MySQL в указанный формат
- * @param  string  $str     Periodic date (every date with year <u>1004</u>) in format "1004-MM-DD"
- * @param  string  $format  Desired output format. Default: "d.m"
+ *
+ * @param  string $str    Periodic date (every date with year <u>1004</u>) in format "1004-MM-DD"
+ * @param  string $format Desired output format. Default: "d.m"
+ *
  * @return string           Translated periodic date to date string
  */
-function convert_mysql_date_wo_year($str, $format = NULL){
+function convert_mysql_date_wo_year($str, $format = null){
 	$y = $m = $d = 0;
 	list($y, $m, $d) = explode('-', $str);
 	// faster default way
 	if(!$format){
 		return $d . '.' . $m;
-	}
-	// via mktime
-	else {
+	}// via mktime
+	else{
 		return date($format, mktime(0, 0, 0, $m, $d));
 	}
 }
 
 /**
  * Перевод даты из MySQL формата в любой формат
+ *
  * @param  string $date   Date in MySQL format "YYYY-MM-DD"
  * @param  string $format Desired format (see date())
+ *
  * @return string         Converted date string from MySQL to desired format
  */
 function convert_mysql_date($date, $format = 'd.m.y'){
 	$y = $m = $d = 0;
 	list($y, $m, $d) = explode('-', $date);
+	
 	return date($format, mktime(0, 0, 0, $m, $d, $y));
 }
 
 /**
  * Перевод даты СО ВРЕМЕНЕМ из MySQL формата в любой формат
+ *
  * @param  string $mysqldatetime Date in MySQL format "YYYY-MM-DD HH:II:SS"
  * @param  string $format        Desired format (see date())
+ *
  * @return string                Converted date <u>with time</u> string from MySQL to desired format
  */
 function convert_mysql_datetime($mysqldatetime, $format){
@@ -789,24 +808,29 @@ function convert_mysql_datetime($mysqldatetime, $format){
 
 /**
  * Перевод даты в заданном формате в дату в MySQL формате
+ *
  * @param  string $date        Input date
  * @param  string $inputformat Input date format. Default: "d.m.Y"
+ *
  * @return string              Converted input date in input format to MySQL format "YYYY-MM-DD"
  */
 function convert_to_mysql_date($date, $inputformat = 'd.m.Y'){
 	$date = DateTime::createFromFormat($inputformat, $date);
+	
 	return $date->format('Y-m-d');
 }
 
 /**
  * Проверка валидности даты
- * @param $date
+ *
+ * @param        $date
  * @param string $format
+ *
  * @return bool
  */
-function is_valid_date($date, $format = 'Y-m-d H:i:s')
-{
+function is_valid_date($date, $format = 'Y-m-d H:i:s'){
 	$d = DateTime::createFromFormat($format, $date);
+	
 	return $d && $d->format($format) == $date;
 }
 
